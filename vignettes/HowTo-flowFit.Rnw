@@ -1,0 +1,872 @@
+% NOTE -- ONLY EDIT THE .Rnw FILE!!!  The .tex file is
+% likely to be overwritten.
+%
+%\VignetteIndexEntry{Fitting Functions for Flow Cytometry Data}
+%\VignetteDepends{flowCore, flowViz, flowFit, flowFitExampleData}
+%\VignetteKeywords{}
+%\VignettePackage{flowFit}
+
+\documentclass[11pt]{article}
+
+\usepackage{times}
+\usepackage{hyperref}
+\usepackage[authoryear,round]{natbib}
+\usepackage{times}
+\usepackage{comment}
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{amsmath}
+\usepackage{amscd}
+\usepackage[utf8]{inputenc}
+\usepackage{enumerate}
+
+
+\textwidth=6.2in
+\textheight=8.5in
+\oddsidemargin=.1in
+\evensidemargin=.1in
+\headheight=-.3in
+
+\newcommand{\scscst}{\scriptscriptstyle}
+\newcommand{\scst}{\scriptstyle}
+\newcommand{\Rfunction}[1]{{\texttt{#1}}}
+\newcommand{\Rcode}[1]{{\texttt{#1}}}
+\newcommand{\Robject}[1]{{\texttt{#1}}}
+\newcommand{\Rpackage}[1]{{\textsf{#1}}}
+\newcommand{\Rclass}[1]{{\textit{#1}}}
+
+\title{Estimate proliferation in cell-tracking dye studies}
+
+\author{Davide Rambaldi}
+
+\begin{document}
+
+\setlength\parindent{0pt}
+
+\maketitle
+
+\begin{abstract}
+
+\noindent \textbf{Background}
+In cells proliferation tracking experiments, cells are stained with a tracking dye before culture. During cell division, the dye will be divided between daughter cells so that each daughter cell brings about a halving of fluorescence intensity of the mother. The fluorescence intensity of a cell, by comparison with the fluorescence intensity of resting cells, provides an indication of how many divisions the cell has undergone since stimulation.
+Analysis of the florescence of cells in the flow cytometric data file acquired after some days of culture (with stimulation of cell proliferation) provides an estimate of the percentage of cells for generation \citep{Givan:2004p527}, \citep{Wallace:2008p657}.
+\\
+\noindent \textbf{Methods:}
+This package uses an R implementation of the Levenberg-Marquardt algorithm (\Rpackage{minpack.lm}) to fit a set of peaks (corresponding to different generations of cells) over the proliferation-tracking dye distribution in a FACS experiment. The package in integrated with other Bioconductor softwares for analysis of flow cytometry datasets like \Rpackage{flowCore} and \Rpackage{flowViz} \citep{Klinke:2009p649}.
+\\
+\noindent \textbf{Results:}
+We have tested the fitting algorithm with three samples of mouse lymphocytes stained with carboxyfluorescein diacetate succinimidyl ester (CFSE), Cell Trace Violet (CTV) and Cell Proliferation Dye eFluor 670 (CPD) \citep{Quah:2012bz}
+\\
+\noindent \textbf{keywords} Flow Cytometry, high throughput, data fitting
+
+\end{abstract}
+
+\clearpage
+\newpage
+
+\section{Introduction} % (fold)
+\label{sec:introduction}
+
+Fluorescent dyes are increasingly being exploited to track cells migration and proliferation. The typical experimental pipeline with tracking dyes involves the following steps:
+
+\begin{enumerate}[1]
+  \item Label cells with a Proliferation Tracking Dye
+  \item Culture in vitro  +/- stimulus for 0-10 days
+  \item Counterstain with subset specific antibodie
+  \item Analyze by flow cytometry
+\end{enumerate}
+
+In the Flow Cytometer:
+
+\begin{enumerate}[1]
+  \item Acquire with FACS a sample of unlabelled cells
+  \item Acquire with FACS a sample of labeled and unstimulated cells (the Parent Population)
+  \item Acquire with FACS a sample of labeled and stimulated cells (the Proliferative Population)
+\end{enumerate}
+
+In the last 20 years, a set of fluorochromes has been used to track cell proliferation \citep{Parish:1999es}. We can divide those dyes in 4 major groups (with some examples):
+
+\begin{itemize}
+  \item \textbf{DNA-binding fluorescent dyes:}
+  \begin{itemize}
+    \item Hoechst 33342
+    \item Thiazole Orange
+  \end{itemize}
+  \item \textbf{Cytoplasmic fluorescent dyes:}
+  \begin{itemize}
+    \item Calcein
+    \item BCECF-AM
+  \end{itemize}
+  \item \textbf{Covalent coupling fluorescent dyes:}
+  \begin{itemize}
+    \item Carboxyfluorescein diacetate succinimidyl ester (CFSE)
+    \item Fluorescein isothiocyanate (FITC)
+  \end{itemize}
+  \item \textbf{Membrane-inserting fluorescent dyes:}
+  \begin{itemize}
+    \item PKH26
+    \item CellVue Lavender
+  \end{itemize}
+\end{itemize}
+
+If the characteristics of the logarithmic amplifier on the flow cytometer are known, it is possible to derive, from a histogram of fluorescence intensity, the proportion of cells that have undergone any particular number of divisions \citep{Givan:1999wo}.
+Generally, a flow cytometer with 1024 channels (channels range) represents a nominal range of 4 log-decades. The calibration can be done using standardized beads (for example: Rainbow Beads from Spherotech) \citep{Givan:2004p527}.
+
+Here we introduce flowFit, an R bioconductor library that fit a set of peaks (corresponding to different generations of cells) over the histogram of fluorescence intensity acquired during a FACS experiment. The package is integrated with the Bioconductor libraries used for the analysis of flow cytometry datasets: \Rpackage{flowCore} and \Rpackage{flowViz}.
+
+% section introduction (end)
+
+\section{Methods} % (fold)
+\label{sec:methods}
+
+\subsection{Single Peak Formula} % (fold)
+\label{sub:single_peak_formula}
+
+The algorithm fit a set of $ N $ peaks on the acquired fcs files using the \Rpackage{minpack.lm}.
+The Levenberg-Marquardt algorithm provides a numerical solution to the problem of minimizing a function over a space of parameters.  It is an iterative technique that locates the minimum of a multivariate function. The "minimum" is expressed as the sum of squares of non-linear real-valued functions.
+
+We fit an initial single peak on the population of cells labeled and un-stimulated (the Parent Population) according to this formula:
+
+$$ a^2\exp\frac{(x - \mu)^2}{2\sigma^2} $$
+\\
+Where $ a^2 $ is proportional to the height of the peak, $ \mu $ is the peak position on the FACS scale and $ \sigma $ is proportional to the peak size.
+
+Once we have fitted a single peak on the parent population, we can use the parent peak position and size as parameters for the fitting on the proliferative population. Given that the tracking dye is partitioned equally between daughter cells, the noise in the data is mainly due to the variance in the initial staining.
+The formula for the next peak (corresponding to cells that have divided one time) will be:
+
+$$ b^2\exp\frac{(x - (\mu-D))^2}{2s^2} $$
+\\
+Where D is the estimated distance between 2 generations of cells.
+
+% subsection single_peak_formula (end)
+
+\subsection{Generations Distance, data range and log decades} % (fold)
+\label{sub:generations_distance}
+
+The distance between two cell generations is defined as the distance between a cell and his child (that contains half of the dye of the mother). This distance is constant on a logarithmic scale and depends from the number of data points in the FACS instrument and from the log decades.
+We can convert the FACS Fluorescence Intensity (FFI) recorded by the instrument into a Relative Fluorescence Intensity (RFI) expressed in Molecules of Equivalent Fluorochrome (MEF):
+
+$$ RFI = 10^{\frac {FFI \cdot l}{c}} $$
+\\
+The inverse formula can be used to convert from RFI to FACS fluorescence:
+
+$$ FFI = \frac{c\cdot\log(RFI)}{(l\cdot\log(10))} $$
+\\
+Where:
+
+\begin{itemize}
+  \item $ RFI $ is the Relative Fluorescence Intensity
+  \item $ FFI $ is the fluorescence on the FACS scale
+  \item $ l $ is the number of log decades in the FACS instrument
+  \item $ c $ is the number of data points (channels) in the instrument.
+\end{itemize}
+
+Using this formulas it is possible to estimate the spacing between generations on the FACS scale. The spacing value is automatically computed, based on the number of decades and the assumption that each generation has one-half of the intensity of the previous generation. In the flowFit library this spacing is automatically computed with the function \Rfunction{generationsDistance}.
+
+The number of log decades represented by the original data's linear scale can be calculated as $ log(R) $ where R is the acquisition resolution (data range for the detector).
+
+The \Rfunction{proliferationFitting} and \Rfunction{parentFitting} functions automatically compute the log decades from the keywords in the FCS file or using the logarithm of the data Range  ( $ log(R) $ ). If the functions find a "log decades" keyword for the current detector in the FCS file, they use the value in the keyword, otherwise log decades are estimated from the detector acquisition resolution.
+
+% subsection generations_distance (end)
+
+\subsection{Fitting Formula} % (fold)
+\label{sub:fitting_formula}
+
+The algorithm automatically computes the number of peaks to be fitted on the proliferating population using the data range for the detector: we first estimate the distance between 2 generations of cells using the generationsDistance function, then we estimate the maximum number of peaks that can be fitted on the FACS instrument scale with the following formula:
+
+$$ N = \frac{D}{c} $$
+
+Where:
+
+\begin{itemize}
+  \item $ N $ is the number of peaks to fit on the dataset
+  \item $ D $ is the distance between 2 generations of cells
+  \item $ c $ is the number of data point (channels) in the instrument
+\end{itemize}
+
+The formula for a model with 10 peaks will be:
+
+$$ M = a^2\exp\frac{(x - M)^2}{2s^2} + b^2\exp\frac{(x - (M-D))^2}{2s^2} + c^2\exp\frac{(x - (M-2D))^2}{2s^2} + d^2\exp\frac{(x - (M-3D))^2}{2s^2} + e^2\exp\frac{(x - (M-4D))^2}{2s^2} + f^2\exp\frac{(x - (M-5D))^2}{2s^2} + g^2\exp\frac{(x - (M-6D))^2}{2s^2} + h^2\exp\frac{(x - (M-7D))^2}{2s^2} + i^2\exp\frac{(x - (M-8D))^2}{2s^2} + l^2\exp\frac{(x - (M-9D))^2}{2s^2} $$
+\\
+
+Where the parameters a,b,c,d,e,f,g,h,i and l are proportional to the height of the peak.
+In the "fixed model" (options fixedModel=TRUE) the \Rpackage{minpack.lm} algorithm estimates the height of each peak but allows the user to keep constant one ore more of these variables: parent peak position (m), parent peak size (s) and generation's distance (D).
+In the "dynamic model"  (options fixedModel=FALSE) the \Rpackage{minpack.lm} algorithm uses as parameters all the variables in the model: the height of each peak, the parent peak position (m), the parent peak size (s) and the generation's distance (D).
+
+In the Levenberg-Marquadt algorithm implementation we use this formula to estimate the error between the model and the real data:
+
+$$ residFun = (Observed - Model)^2 $$
+
+% subsection fitting_formula (end)
+
+\subsection{\% of cells for generation} % (fold)
+\label{sub:P_of_cells_for_generation}
+
+With the \Rfunction{nls.lm} function we have estimated the "heights" parameter (the height of each peak), we can use it to get an estimate of the number of cells for generation.
+We compute the total number of cells analyzed in the model with a numerical integration on the complete model:
+
+$$ I_{all} = \int_{v}^{w} M $$
+\\
+Where $ v $ and $ w $, the lower and upper limits for numerical integration, are the \Rfunction{minRange} and \Rfunction{maxRange} values for the analyzed fcs column.
+For each generation, we compute the number of cells in the peak with a numerical integration. For example, the formula for the first generation of cells is:
+
+$$ I_{1} = \int_{v}^{w} a^2\exp\frac{(x - \mu)^2}{2\sigma^2} $$
+\\
+Where $ v $ and $ w $, the lower and upper limits for numerical integration, are the \Rfunction{minRange} and \Rfunction{maxRange} values for the analyzed fcs column.
+
+To estimate the \% of cells for generation we simply take the ratio between the complete model numerical integration and the integration of a single generation of cells:
+
+$$ Gen_1 = \frac{I_1}{I_{all}}*100 $$
+
+% subsection P_of_cells_for_generation (end)
+
+\subsection{Proliferation Index} % (fold)
+\label{sub:proliferation_index}
+
+To evaluate the proliferation in the sample we can use the \Rfunction{proliferationIndex} function: proliferation index is calculated as the sum of the cells in all generations including the parental divided by the computed number of original parent cells theoretically present at the start of the experiment.
+
+The proliferation index it's a measure of the fold increase in cell number in the culture over the course of the experiment:
+
+$$ \frac{\sum_0^iN_i}{\sum_0^iN^i/2^i} $$
+\\
+Where $ i $ is the generation number (parent generation = 0). In the absence of proliferation, that is, when all cells are in the parent generation, the formula gives:
+
+$$ \frac{N_0}{N_0/2^0} = 1 $$
+\\
+defining the lower limit of the PI.
+
+% subsection proliferation_index (end)
+
+% section methods (end)
+
+\section{Fitting Flow Cytometry Data} % (fold)
+\label{sec:fitting_flow_cytometry_data}
+
+The primary task of\Rpackage{flowFit} is to estimate the number of cells for generation in a proliferation tracking dye study. This is accomplished with the functions: \Rfunction{parentFitting} and \Rfunction{proliferationFitting}.
+
+In order to reduce the download size of \Rpackage{flowFit}, we have moved the example dataset to a Bioconductor data package (\Rpackage{flowFitExampleData}) that can be downloaded in the usual way.
+
+<<CompanionPkg, eval=FALSE>>=
+
+source("http://www.bioconductor.org/biocLite.R")
+
+biocLite("flowFitExampleData")
+@
+
+First of all we must load the package and the examples:
+
+
+<<echo=true,results=hide>>=
+library(flowFitExampleData)
+library(flowFit)
+@
+
+We must also load the \Rfunction{flowCore} package to load some functions used in this vignette:
+
+<<echo=true,results=hide>>=
+library(flowCore)
+@
+
+In this example we will use the package \Rpackage{flowFit} to calculate the percentage of cells for generation in a single CD4+ population of lymphocytes labeled with: CFSE, CPD and CTV.
+\Rpackage{flowFit} use the Bioconductor package \Rpackage{flowCore} to load .FCS files. For this example, we provide some example data in the \Rpackage{flowFitExampleData} that can be loaded in your environment with the command:
+
+<<echo=true, results=verbatim>>=
+data(QuahAndParish)
+@
+
+The QuahAndParish dataset contains 4 FCS files, those files are the raw data of the figure 2 (CD4+ subpopulation) in the paper: \textbf{ New and improved methods for measuring lymphocyte proliferation in vitro and in vivo using CFSE-like fluorescent dyes } \citep{Quah:2012bz}.
+
+\begin{enumerate}
+  \item CD4+ labeled with CFSE, CPD and CTV (Non stimulated)
+  \item CD4+ labeled with CFSE (stimulated)
+  \item CD4+ labeled with CPD (stimulated)
+  \item CD4+ labeled with CTV (stimulated)
+\end{enumerate}
+
+\subsection{Parent Fitting} % (fold)
+\label{sub:parent_fitting}
+
+First of all we must estimate the parent population position and size with the function \Rfunction{parentFitting}. The first sample in the flowSet, correspond to the cells non stimulated and stained with the 3 dyes (parent population):
+
+<<echo=true, results=verbatim>>=
+QuahAndParish[[1]]
+@
+
+We fit a parent population peak for each dye (CFSE, CPD and CTV) (See figure~\ref{fig:1},figure~\ref{fig:2},figure~\ref{fig:3}).
+To estimate position and size of the parent population peak, we must have the following informations on the FACS instrument:
+
+\begin{enumerate}
+  \item The FCS detector name: the name of the FCS column in the \Rclass{flowFrame}
+  \item The data range for the FCS detector (after transformations).
+  \item The log decades for the FCS detector: the number of log decades represented by the original data's linear scale
+\end{enumerate}
+
+\clearpage
+\newpage
+
+\subsubsection{Fitting And Plots}
+
+<<echo=FALSE, results=hide>>==
+parent.fitting.cfse <- parentFitting(QuahAndParish[[1]], "<FITC-A>")
+parent.fitting.cpd <- parentFitting(QuahAndParish[[1]], "<APC-A>")
+parent.fitting.ctv <- parentFitting(QuahAndParish[[1]], "<Alexa Fluor 405-A>")
+@
+
+\paragraph{CFSE Parent Population} % (fold)
+\label{par:cfse_parent_population}
+
+<<echo=TRUE, results=hide, eval=FALSE>>=
+parent.fitting.cfse <- parentFitting(QuahAndParish[[1]], "<FITC-A>")
+plot(parent.fitting.cfse)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<fig1, fig=TRUE, echo=false>>=
+plot(parent.fitting.cfse)
+@
+\end{center}
+\caption{ CD4+ CELLS PARENT FITTING CFSE }
+\label{fig:1}
+\end{figure}
+
+% paragraph cfse_parent_population (end)
+
+\clearpage
+\newpage
+
+<<echo=TRUE, results=hide, eval=FALSE>>=
+parent.fitting.cpd <- parentFitting(QuahAndParish[[1]], "<APC-A>")
+plot(parent.fitting.cpd)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<fig2, fig=TRUE, echo=false>>=
+plot(parent.fitting.cpd)
+@
+\end{center}
+\caption{ CD4+ CELLS PARENT FITTING CPD }
+\label{fig:2}
+\end{figure}
+
+
+\clearpage
+\newpage
+
+<<echo=TRUE, results=hide, eval=FALSE>>=
+parent.fitting.ctv <- parentFitting(QuahAndParish[[1]], "<Alexa Fluor 405-A>")
+plot(parent.fitting.ctv)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig3, fig=TRUE, echo=false>>=
+plot(parent.fitting.ctv)
+@
+\end{center}
+\caption{ CD4+ CELLS PARENT FITTING CTV }
+\label{fig:3}
+\end{figure}
+
+\clearpage
+\newpage
+
+\subsubsection{summary and coef}
+
+The \Rfunction{summary} function produces some result summaries:
+
+<<echo=TRUE, results=verbatim>>=
+summary(parent.fitting.cfse)
+@
+
+We can extract the confidence interval for our fitting with the function \Rfunction{confint}:
+
+<<echo=true, results=verbatim>>=
+confint(parent.fitting.cfse)
+@
+
+\clearpage
+\newpage
+
+\subsubsection{dataRange}
+
+The data range for the FACS detector is automatically computed from the "maxRange" slot in the \Rclass{flowFrame}:
+
+<<echo=true, results=verbatim>>=
+QuahAndParish[[1]]@parameters@data[7,]
+@
+
+In this experiment we have transformed the <FITC-A> column with a log transformation:
+
+<<echo=true, results=verbatim, eval=FALSE>>=
+logTrans <- logTransform(transformationId="log10-transformation",
+ logbase=10, r=1, d=1)
+@
+
+The original range [0 - 261588] was converted to a LOG range [0-5.417616].
+
+\subsubsection{logDecades}
+
+The number of log decades represented by the original data's linear scale can be calculated as $ log(R) $ where $ R $ is the acquisition resolution (data Range for the detector). The \Rfunction{proliferationFitting} and \Rfunction{parentFitting} functions automatically compute the logDecades from the keywords in the FCS file or using the $ log(R) $ formula. If the functions find a log decades keyword for this detector, they use the value in they keyword. Otherwise log decades are estimated from the detector acquisition resolution.
+In the PKH26 example data, log decaedes are extracted using the function \Rfunction{keyword} from package \Rpackage{flowCore}:
+
+<<echo=true, results=verbatim>>=
+data(PKH26data)
+keyword(PKH26data[[1]])$`$P4M`
+@
+
+In the QuahAndParish example data there is no log decades keyword in the fcs file, log decades are estimated with the $ log(R) $ formula.
+
+<<echo=true, results=verbatim>>=
+acquisiton.resolution <- QuahAndParish[[1]]@parameters@data$range[7]
+log10(acquisiton.resolution)
+@
+
+In any case, you can provide your \Rfunction{dataRange} and \Rfunction{logDecades} as arguments of the \Rfunction{proliferationFitting} and \Rfunction{parentFitting} functions.
+
+\clearpage
+\newpage
+
+% subsection parent_fitting (end)
+
+\subsection{Proliferation Fitting} % (fold)
+\label{sub:proliferation_fitting}
+
+\subsubsection{Input}
+
+With the \Rfunction{parentFitting} function we have estimated the position and size of the parent population. For example, in the CFSE sample:
+
+<<echo=true, results=verbatim>>=
+parent.fitting.cfse@parentPeakPosition
+parent.fitting.cfse@parentPeakSize
+@
+
+We can use the estimates as a best guess for the \Rfunction{proliferationFitting} function:
+
+<<echo=true, results=verbatim>>=
+fitting.cfse <- proliferationFitting(QuahAndParish[[2]],
+  "<FITC-A>", parent.fitting.cfse@parentPeakPosition,
+  parent.fitting.cfse@parentPeakSize)
+fitting.cfse
+@
+
+As for the \Robject{parentFitting-data} object, we have access to the functions \Rfunction{coef} and \Rfunction{summary}.
+<<echo=true, results=verbatim>>=
+coef(fitting.cfse)
+@
+
+<<echo=true, results=verbatim>>=
+summary(fitting.cfse)
+@
+
+\subsubsection{Plots}
+
+The function \Rfunction{proliferationFitting} return a \Robject{proliferationFittingData} object, with the \Rfunction{plot} function we can generate some graphic output. You can use the parameter \emph{which} to select the plots you want to draw. You can plot:
+
+\begin{enumerate}
+  \item [1] Input data
+  \item [2] Model data and Fitting
+  \item [3] Fitting and single generations peaks
+  \item [4] Generations barplot
+  \item [5] Fitting diagnostics
+\end{enumerate}
+
+All \Rfunction{plot} functions in the \Rpackage{flowFit} package support these options:
+
+\begin{enumerate}
+  \item \Rcode{main}: an overall title for the plot.
+  \item \Rcode{xlab}: a title for the x axis.
+  \item \Rcode{ylab}: a title for the y axis.
+  \item \Rcode{legend}: show/hide messages AND legend.
+  \item \Rcode{logScale}: put a log scale on the x axis.
+  \item \Rcode{drawGrid}: put some dashed lines at the \Rfunction{generationsDistance} expected positions (\Robject{proliferationFittingData} object only).
+\end{enumerate}
+
+For more info about plots in \Rpackage{flowFit}:
+
+<<echo=TRUE,eval=FALSE>>=
+library(flowFit)
+?plot
+@
+
+\clearpage
+\newpage
+
+\paragraph{Input Data} % (fold)
+\label{par:input_data}
+
+Plot the observed data extracted from the FCS file and the data smoothed with the \Rfunction{kz} function (\Rpackage{kza} package).
+
+<<echo=TRUE,eval=FALSE,results=verbatim>>=
+plot(fitting.cfse, which=1)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig4, fig=TRUE, echo=false>>=
+plot(fitting.cfse, which=1)
+@
+\end{center}
+\caption{Input Data: \Rcode{plot(fitting.cfse, which=1)}}
+\label{fig:4}
+\end{figure}
+
+% paragraph input_data (end)
+
+\clearpage
+\newpage
+
+\paragraph{Model data and Fitting} % (fold)
+\label{par:model_data_and_fitting}
+
+Plot the smoothed data and the fitted model function.
+
+<<echo=TRUE,eval=FALSE,results=verbatim>>=
+plot(fitting.cfse, which=2)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig5, fig=TRUE, echo=false>>=
+plot(fitting.cfse, which=2)
+@
+\end{center}
+\caption{Model data and Fitting: \Rcode{plot(fitting.cfse, which=2)}}
+\label{fig:5}
+\end{figure}
+
+% paragraph model_data_and_fitting (end)
+
+\clearpage
+\newpage
+
+\paragraph{Fitting and single generations peaks} % (fold)
+\label{par:fitting_and_single_generations_peaks}
+
+Plot the smoothed data, the fitted model function and a single peak for each generation.
+
+<<echo=TRUE,eval=FALSE,results=verbatim>>=
+plot(fitting.cfse, which=3)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig6, fig=TRUE, echo=false>>=
+plot(fitting.cfse, which=3)
+@
+\end{center}
+\caption{Fitting and single generations peaks: plot(fitting.cfse, which=3) }
+\label{fig:6}
+\end{figure}
+
+% paragraph fitting_and_single_generations_peaks (end)
+\clearpage
+\newpage
+
+\paragraph{Generations barplot} % (fold)
+\label{par:generations_barplot}
+
+Plot the estimated numer of cells for generation (\%) as a barplot.
+
+<<echo=TRUE,eval=FALSE,results=verbatim>>=
+plot(fitting.cfse, which=4)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig7, fig=TRUE, echo=false>>=
+plot(fitting.cfse, which=4)
+@
+\end{center}
+\caption{Generations barplot: plot(fitting.cfse, which=4)}
+\label{fig:7}
+\end{figure}
+
+% paragraph generations_barplot (end)
+\clearpage
+\newpage
+
+\paragraph{Fitting diagnostics} % (fold)
+\label{par:fitting_diagnostics}
+
+Plot the log residual sum of squares against the iteration number and some informations about the fitting:
+
+\begin{enumerate}
+  \item Number of events
+  \item Fitting Deviance
+  \item Parent Population Peak position (before and after modeling)
+  \item Parent Population Peak size (before and after modeling)
+\end{enumerate}
+
+<<echo=TRUE,eval=FALSE,results=verbatim>>=
+plot(fitting.cfse, which=5)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig8, fig=TRUE, echo=false>>=
+plot(fitting.cfse, which=5)
+@
+\end{center}
+\caption{Fitting diagnostics: plot(fitting.cfse, which=5) }
+\label{fig:8}
+\end{figure}
+
+% paragraph fitting_diagnostics (end)
+\clearpage
+\newpage
+
+\paragraph{Multiple plots} % (fold)
+\label{par:multiple_plots}
+
+We can combine multiple plots removing the \Rcode{legend} and using the \Rcode{mfrow} option of \Rfunction{par}.
+
+<<echo=TRUE,eval=FALSE,results=verbatim>>=
+par(mfrow=c(2,2))
+plot(fitting.cfse, which=1:4, legend=FALSE)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig9, fig=TRUE, echo=false>>=
+par(mfrow=c(2,2))
+plot(fitting.cfse, which=1:4, legend=FALSE)
+@
+\end{center}
+\caption{Multiple plots: plot(fitting.cfse, which=1:4, legend=FALSE) }
+\label{fig:9}
+\end{figure}
+
+<<echo=TRUE,eval=FALSE,results=verbatim>>=
+par(mfrow=c(2,1))
+plot(fitting.cfse, which=c(3,5), legend=FALSE)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig10, fig=TRUE, echo=false>>=
+par(mfrow=c(2,1))
+plot(fitting.cfse, which=c(3,5), legend=FALSE)
+@
+\end{center}
+\caption{Multiple plots: plot(fitting.cfse, which=c(3,5), legend=FALSE) }
+\label{fig:10}
+\end{figure}
+
+% paragraph multiple_plots (end)
+\clearpage
+\newpage
+
+\subsubsection{Cells for generation}
+
+The percentage of cells for each generation can be extracted from the \Robject{proliferationFittingData} object with the function \Rfunction{getGenerations}, the data are in a \Rfunction{list}.
+
+<<GenFittingOut, echo=true, results=verbatim>>=
+gen <- getGenerations(fitting.cfse)
+class(gen)
+@
+
+We can extract also the percentage of cells for generation as a vector instead of a list. To do this, you need to use the \Rfunction{generations} slot in the \Robject{proliferationFittingData} object:
+
+<<GenFittingOutVector, echo=true, results=verbatim>>=
+fitting.cfse@generations
+@
+
+We compute the total number of cells analyzed in the model with a numerical integration on the complete model:
+
+$$ I_{all} = \int_{v}^{w} M $$
+\\
+Where $ v $ and $ w $, the lower and upper limits for numerical integration, are the \Rfunction{minRange} and \Rfunction{maxRange} values for the analyzed fcs column.
+For each generation, we compute the number of cells in the peak with a numerical integration. For example, the formula for the first generation of cells is:
+
+$$ I_{1} = \int_{v}^{w} a^2\exp\frac{(x - \mu)^2}{2\sigma^2} $$
+\\
+Where $ v $ and $ w $, the lower and upper limits for numerical integration, are the \Rfunction{minRange} and \Rfunction{maxRange} values for the analyzed fcs column.
+
+To estimate the \% of cells for generation we simply take the ratio between the complete model numerical integration and the integration of a single generation of cells:
+
+$$ Gen_1 = \frac{I_1}{I_{all}}*100 $$
+
+\subsubsection{Proliferation Index}
+
+Finally we can calculate the Proliferation Index \citep{Munson:2010p668} for this sample.
+Proliferation index is calculated as the sum of the cells in all generations including the parental divided by the computed number of original parent cells theoretically present at the start of the experiment.
+
+<<ProliferationIndex, echo=true, results=verbatim>>=
+proliferationIndex(fitting.cfse)
+@
+
+The proliferation index it's a measure of the fold increase in cell number in
+the culture over the course of the experiment:
+
+$$ \frac{\sum_0^iN_i}{\sum_0^iN^i/2^i} $$
+\\
+Where $ i $ is the generation number (parent generation = 0). In the absence of proliferation, that is, when all cells are in the parent generation, the formula gives:
+
+$$ \frac{N_0}{N_0/2^0} = 1 $$
+\\
+defining the lower limit of the PI.
+
+\clearpage
+\newpage
+% subsection proliferation_fitting (end)
+
+\subsection{Comparing Samples} % (fold)
+\label{sub:comparing_samples}
+
+We can estimate the \% of cells for generation in the 3 samples.
+
+\begin{enumerate}
+  \item lymphocytes CD4+ labeled with CFSE (stimulated)
+  \item lymphocytes CD4+ labeled with CPD (stimulated)
+  \item lymphocytes CD4+ labeled with CTV (stimulated)
+\end{enumerate}
+
+The 3 samples analyzed came from the same cells population and have proliferated in the same way. The only difference in the experiement is the stain used for track the cells proliferation. We expect to observe the same cells/generation distribution across the 3 samples.
+To compare the generation distributions we can extract the \% of cells for generation for the 3 samples and compare those distributions with a chi-squared test.
+
+\subsubsection{Proliferation Fitting CTV}
+
+A fitting for the CTV sample:
+
+<<FittingCTVQuah, echo=true, results=verbatim>>=
+fitting.ctv <- proliferationFitting(QuahAndParish[[4]],
+  "<Alexa Fluor 405-A>", parent.fitting.ctv@parentPeakPosition,
+  parent.fitting.ctv@parentPeakSize)
+@
+
+<<echo=TRUE,eval=FALSE,results=verbatim>>=
+plot(fitting.ctv, which=3)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig11, fig=TRUE, echo=false>>=
+plot(fitting.ctv, which=3)
+@
+\end{center}
+\caption{ Proliferation Fitting CTV }
+\label{fig:11}
+\end{figure}
+
+\clearpage
+\newpage
+
+\subsubsection{Proliferation Fitting CPD} % (fold)
+
+A fitting for the CPD sample. In this sample there are no visible peaks:
+
+<<echo=TRUE,eval=FALSE,results=verbatim>>=
+plot(QuahAndParish[[3]],"<APC-A>", breaks=1024, main="CPD sample")
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig12, fig=TRUE, echo=false>>=
+plot(QuahAndParish[[3]],"<APC-A>", breaks=1024, main="CPD sample")
+@
+\end{center}
+\caption{ The CPD Sample }
+\label{fig:12}
+\end{figure}
+
+\clearpage
+\newpage
+
+To improve the fitting we can keep fixed some parameters from the \Rfunction{parentFitting} function. Here we launch the fitting function (\Rfunction{proliferationFitting}) keeping fixed the \Rfunction{parentPeakPosition}:
+
+<<FittingCPDQuah, echo=true, results=verbatim>>=
+fitting.cpd <- proliferationFitting(QuahAndParish[[3]],
+  "<APC-A>",
+  parent.fitting.cpd@parentPeakPosition,
+  parent.fitting.cpd@parentPeakSize,
+  fixedModel=TRUE,
+  fixedPars=list(M=parent.fitting.cpd@parentPeakPosition))
+@
+
+<<echo=TRUE,eval=FALSE,results=verbatim>>=
+plot(fitting.cpd, which=3)
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig13, fig=TRUE, echo=false>>=
+plot(fitting.cpd, which=3)
+@
+\end{center}
+\caption{ Proliferation Fitting CPD }
+\label{fig:13}
+\end{figure}
+
+\clearpage
+\newpage
+
+\subsubsection{Comparing Samples}
+
+<<CHISQUARETEST, echo=true, results=verbatim>>=
+perc.cfse <- fitting.cfse@generations
+perc.cpd <- fitting.cpd@generations
+perc.ctv <- fitting.ctv@generations
+@
+
+In the CFSE sample we have estimated 10 generations, while in hte other 2 samples we have estimated 16 generations. We trim the length of the shorter vector with NA:
+
+<<CHISQUARETESTTRIM, echo=true, results=verbatim>>=
+perc.cfse <- c(perc.cfse, rep(0,6))
+@
+
+Chi-squared Test:
+
+<<CHISQUARE_TEST, echo=true, results=verbatim>>=
+M <- rbind(perc.cfse, perc.cpd, perc.ctv)
+colnames(M) <- 1:16
+(Xsq <- chisq.test(M, B=100000, simulate.p.value=TRUE))
+@
+
+<<echo=TRUE,eval=FALSE,results=verbatim>>=
+plot(perc.cfse, type="b", axes=F, ylim=c(0,50), xlab="generations", ylab="Percentage of cells", main="")
+lines(perc.cpd, type="b", col="red")
+lines(perc.ctv, type="b", col="blue")
+legend("topleft", c("CFSE","CPD","CTV"), pch=1, col=c("black","red","blue"), bg = 'gray90',text.col = "green4")
+axis(2, at=seq(0,50,10), labels=paste(seq(0,50,10),"%"))
+axis(1, at=1:16,labels=1:16)
+text(8,40,paste("Chi-squared Test p=", round(Xsq$p.value, digits=4), sep=""))
+@
+
+\begin{figure}[h!]
+\begin{center}
+<<label=fig14, fig=TRUE, echo=false>>=
+plot(perc.cfse, type="b", axes=F, ylim=c(0,50),
+  xlab="generations", ylab="Percentage of cells", main="")
+lines(perc.cpd, type="b", col="red")
+lines(perc.ctv, type="b", col="blue")
+legend("topleft", c("CFSE","CPD","CTV"), pch=1, col=c("black","red","blue"), bg = 'gray90',text.col = "green4")
+axis(2, at=seq(0,50,10), labels=paste(seq(0,50,10),"%"))
+axis(1, at=1:16,labels=1:16)
+text(8,40,paste("Chi-squared Test p=", round(Xsq$p.value, digits=4), sep=""))
+@
+\end{center}
+\caption{Comparing the \% of cells/generation in the 3 samples}
+\label{fig:14}
+\end{figure}
+
+According to the Chi-Squared Test, we didn't observe any effect for the different staining technique in the 3 samples.
+
+% subsection comparing_samples (end)
+
+% section fitting_flow_cytometry_data (end)
+
+\clearpage
+\newpage
+
+\section{References} % (fold)
+\label{sec:references}
+
+\bibliographystyle{plainnat}
+\bibliography{cytoref}
+
+% section references (end)
+
+\end{document}
+

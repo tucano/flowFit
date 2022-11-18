@@ -1,0 +1,42 @@
+importClassesFrom(flowCore, flowFrame)
+
+importFrom(flowCore, exprs, keyword, colnames, Data, rectangleGate, filter, Subset)
+
+importFrom(graphics, plot)
+
+importFrom(gplots, barplot2)
+
+importFrom(kza, kz)
+
+importFrom(minpack.lm, nls.lm, nls.lm.control)
+
+importFrom(stats, coef, confint)
+
+importFrom(flowViz, plot)
+
+import(methods)
+
+exportClasses(
+  "parentFittingData",
+  "proliferationFittingData"
+)
+
+exportMethods(
+  "initialize",
+  "show",
+  "summary",
+  "Data",
+  "confint",
+  "coef",
+  "plot"
+)
+
+export(
+  "parentFitting",
+  "logTicks",
+  "proliferationGrid",
+  "generationsDistance",
+  "proliferationFitting",
+  "proliferationIndex",
+  "getGenerations"
+)

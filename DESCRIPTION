@@ -1,0 +1,28 @@
+Package: flowFit
+Type: Package
+Title: Estimate proliferation in cell-tracking dye studies
+Version: 1.6.0
+Date: 2012-11-29
+Author: Davide Rambaldi
+Maintainer: Davide Rambaldi <davide.rambaldi@gmail.com>
+Description: This package estimate the proliferation of a cell
+        population in cell-tracking dye studies. The package uses an R
+        implementation of the Levenberg-Marquardt algorithm
+        (minpack.lm) to fit a set of peaks (corresponding to different
+        generations of cells) over the proliferation-tracking dye
+        distribution in a FACS experiment.
+License: Artistic-2.0
+LazyLoad: yes
+Imports: flowCore, flowViz, graphics, kza, methods, minpack.lm, gplots
+Depends: R (>= 2.12.2)
+Suggests: flowFitExampleData
+Collate: flowFit-internal.R AllClasses.R AllGenerics.R show-methods.R
+        summary-methods.R view-accessors.R coef-methods.R
+        confint-methods.R plot-methods.R logTicks.R
+        generationsDistance.R proliferationGrid.R parentFitting.R
+        proliferationFitting.R proliferationIndex.R getGenerations.R
+URL:
+BugReports: Davide Rambaldi <davide.rambaldi@gmail.com>
+biocViews: FlowCytometry, CellBasedAssays
+NeedsCompilation: no
+Packaged: 2015-04-17 04:25:13 UTC; biocbuild

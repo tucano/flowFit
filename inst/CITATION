@@ -1,0 +1,21 @@
+citHeader("To cite package 'flowFit' in publications use:")
+
+## R >= 2.8.0 passes package metadata to citation().
+if(!exists("meta") || is.null(meta)) meta <- packageDescription("flowFit")
+year <- sub(".*(2[[:digit:]]{3})-.*", "\\1", meta$Date)
+vers <- paste("R package version", meta$Version)
+
+citEntry(entry="Manual",
+    title = "flowFit: estimate proliferation in cell-tracking dye syudies.",
+    author = personList(as.person("Davide Rambaldi")),
+    year = year,
+    note = vers,
+
+    textVersion =
+    paste("Davide Rambaldi, (",
+        year,
+        "). flowFit: estimate proliferation in cell-tracking dye syudies. ",
+      vers,
+      ".",
+      sep="")
+    )
